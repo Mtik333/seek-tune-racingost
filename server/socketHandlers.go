@@ -229,7 +229,7 @@ func handleNewFingerprint(socket socketio.Conn, fingerprintData string) {
 		return
 	}
 
-	matches, _, err := shazam.FindMatchesFGP(data.Fingerprint)
+	matches, _, err := shazam.FindMatchesFGP(data.Fingerprint, nil)
 	if err != nil {
 		err := xerrors.New(err)
 		logger.ErrorContext(ctx, "failed to get matches.", slog.Any("error", err))

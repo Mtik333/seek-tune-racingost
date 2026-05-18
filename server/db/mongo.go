@@ -58,6 +58,10 @@ func (db *MongoClient) StoreFingerprints(fingerprints map[uint32]models.Couple) 
 	return nil
 }
 
+func (db *MongoClient) GetCouplesFiltered(addresses []uint32, songIDs []uint32) (map[uint32][]models.Couple, error) {
+	return db.GetCouples(addresses);
+}
+
 func (db *MongoClient) GetCouples(addresses []uint32) (map[uint32][]models.Couple, error) {
 	collection := db.client.Database("song-recognition").Collection("fingerprints")
 

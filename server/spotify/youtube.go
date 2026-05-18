@@ -24,6 +24,7 @@ import (
 )
 
 const developerKey = ""
+  var ErrVideoUnavailable = errors.New("video unavailable")
 
 // https://github.com/BharatKalluri/spotifydl/blob/v0.1.0/src/youtube.go
 func getYoutubeIdWithAPI(spTrack Track) (string, error) {
@@ -221,8 +222,16 @@ func ytSearch(searchTerm string, limit int) (results []*SearchResult, err error)
 	return results, nil
 }
 
+// DownloadByYTID downloads audio for a given YouTube video ID into outputDir.
+// Returns the path to the downloaded WAV file.
+  func DownloadByYTID(ytID, outputDir, browser string) (string, error) {
+      videoURL := fmt.Sprintf("https://youtube.com/watch?v=%s", ytID)
+      outputPath := filepath.Join(outputDir, ytID)
+      return downloadYTaudio(videoURL, outputPath, browser)
+  }
+
 // downloadYTaudio downloads audio from a YouTube video using yt-dlp command line tool.
-func downloadYTaudio(videoURL, outputFilePath string) (string, error) {
+func downloadYTaudio(videoURL, outputFilePath string, browser string) (string, error) {
 	logger := utils.GetLogger()
 
 	dir := filepath.Dir(outputFilePath)
@@ -237,7 +246,20 @@ func downloadYTaudio(videoURL, outputFilePath string) (string, error) {
 		return "", errors.New("yt-dlp is not installed or not in PATH")
 	}
 
-	audioFmt := "wav"
+      audioFmt := "wav"
+      args := []string{
+          "-f", "bestaudio",
+          "--extract-audio",
+          "--audio-format", audioFmt,
+          "--retries", "10",
+          "--fragment-retries", "10",
+          "-o", outputFilePath,
+      }
+      if browser != "" {
+          args = append(args, "--cookies-from-browser", browser)
+      }
+      args = append(args, videoURL)
+      
 	cmd := exec.Command(
 		"yt-dlp",
 		"-f", "bestaudio",
@@ -247,10 +269,14 @@ func downloadYTaudio(videoURL, outputFilePath string) (string, error) {
 		videoURL,
 	)
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logger.Error("yt-dlp command failed", slog.String("output", string(output)), slog.Any("error", err))
-		return "", err
-	}
+	  output, err := cmd.CombinedOutput()
+	  if err != nil {
+	      if strings.Contains(string(output), "Video unavailable") {
+		  return "", ErrVideoUnavailable
+	      }
+	      logger.Error("yt-dlp command failed", slog.String("output", string(output)), slog.Any("error", err))
+	      return "", err
+	  }
+
 	return outputFilePath + "." + audioFmt, nil
 }

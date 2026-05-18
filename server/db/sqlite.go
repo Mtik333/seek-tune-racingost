@@ -102,6 +102,15 @@ func (db *SQLiteClient) StoreFingerprints(fingerprints map[uint32]models.Couple)
 	return tx.Commit()
 }
 
+  func (db *SQLiteClient) HasFingerprints(songID uint32) (bool, error) {
+        var count int
+        err := db.db.QueryRow("SELECT COUNT(*) FROM fingerprints WHERE songID = ? LIMIT 1", songID).Scan(&count)
+        if err != nil {
+                return false, fmt.Errorf("error checking fingerprints for songID %d: %s", songID, err)
+        }
+        return count > 0, nil
+  }
+
 func (db *SQLiteClient) GetCouples(addresses []uint32) (map[uint32][]models.Couple, error) {
 	couples := make(map[uint32][]models.Couple)
 
@@ -128,6 +137,38 @@ func (db *SQLiteClient) GetCouples(addresses []uint32) (map[uint32][]models.Coup
 
 	return couples, nil
 }
+
+  func (db *SQLiteClient) GetCouplesFiltered(addresses []uint32, songIDs []uint32) (map[uint32][]models.Couple, error) {
+      couples := make(map[uint32][]models.Couple)
+
+      filterSet := make(map[uint32]bool, len(songIDs))
+      for _, id := range songIDs {
+          filterSet[id] = true
+      }
+
+      for _, address := range addresses {
+      	rows, err := db.db.Query("SELECT anchorTimeMs, songID FROM fingerprints WHERE address = ?", address)
+          if err != nil {
+              return nil, fmt.Errorf("error querying database: %s", err)
+          }
+          
+          var docCouples []models.Couple
+          for rows.Next() {
+              var couple models.Couple
+              if err := rows.Scan(&couple.AnchorTimeMs, &couple.SongID); err != nil {
+                  rows.Close()
+                  return nil, fmt.Errorf("error scanning row: %s", err)
+              }
+              if len(filterSet) == 0 || filterSet[couple.SongID] {
+                  docCouples = append(docCouples, couple)
+              }   
+          }
+          rows.Close()
+          couples[address] = docCouples
+      }   
+  
+      return couples, nil
+  }   
 
 
 func (db *SQLiteClient) TotalSongs() (int, error) {

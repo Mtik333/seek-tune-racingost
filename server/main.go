@@ -31,25 +31,38 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		fmt.Println("Expected 'find', 'download', 'erase', 'save', or 'serve' subcommands")
+		fmt.Println("Expected 'find', 'download', 'erase', 'save', 'export' or 'serve' subcommands")
 		fmt.Println("\nUsage examples:")
 		fmt.Println("  find <path_to_wav_file>")
 		fmt.Println("  download <spotify_url>")
 		fmt.Println("  erase [db | all]  (default: db)")
 		fmt.Println("  save [-f|--force] <path_to_file_or_dir>")
+		fmt.Println("  export [-o output.sql] <path_to_csv>")
 		fmt.Println("  serve [-proto <http|https>] [-p <port>]")
 		os.Exit(1)
 	}
 	_ = godotenv.Load()
 
 	switch os.Args[1] {
-	case "find":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: main.go find <path_to_wav_file>")
-			os.Exit(1)
-		}
-		filePath := os.Args[2]
-		find(filePath)
+	  case "find":
+	      findCmd := flag.NewFlagSet("find", flag.ExitOnError)
+	      songsCSV := findCmd.String("songs", "", "CSV file to limit search to specific song IDs")
+	      findCmd.Parse(os.Args[2:])
+	      if findCmd.NArg() < 1 {
+		  fmt.Println("Usage: seek-tune find [-songs game.csv] <path_to_wav_file>")
+		  os.Exit(1)
+	      }
+	      var songIDs []uint32
+	      if *songsCSV != "" {
+		  var err error
+		  songIDs, err = parseSongIDsFromCSV(*songsCSV)
+		  if err != nil {
+		      fmt.Printf("Error reading songs CSV: %v\n", err)
+		      os.Exit(1)
+		  }
+	      }
+	      find(findCmd.Arg(0), songIDs)
+
 	case "download":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: main.go download <spotify_url>")
@@ -97,6 +110,41 @@ func main() {
 		}
 		filePath := indexCmd.Arg(0)
 		save(filePath, *force)
+	  case "export":
+	      exportCmd := flag.NewFlagSet("export", flag.ExitOnError)
+	      outputFile  := exportCmd.String("o",       "fingerprints.sql", "Output file path (.sql, .csv, or .db/.sqlite3)")
+	      browser     := exportCmd.String("browser", "",                 "Browser to pull cookies from (firefox, chrome, chromium)")
+	      delay       := exportCmd.Int("delay",      3,                  "Seconds to sleep between downloads")
+	      jitter      := exportCmd.Int("jitter",     2,                  "Extra random seconds added to delay (0–jitter)")
+	      retries     := exportCmd.Int("retries",    3,                  "Max download retries per song")
+	      exportCmd.Parse(os.Args[2:])
+	      if exportCmd.NArg() < 1 {
+		  fmt.Println("Usage: seek-tune export [-o output] [-browser firefox] [-delay 3] [-jitter 2] [-retries 3] <path_to_csv>")
+		  os.Exit(1)
+	      }
+	      exportFingerprints(exportCmd.Arg(0), *outputFile, *browser, *delay, *jitter, *retries)
+
+	      
+	  case "recognize":
+	      recCmd := flag.NewFlagSet("recognize", flag.ExitOnError)
+	      songsCSV := recCmd.String("songs", "", "CSV file to limit search to specific song IDs")
+	      recCmd.Parse(os.Args[2:])
+	      if recCmd.NArg() < 1 {
+		  fmt.Fprintln(os.Stderr, "Usage: seek-tune recognize [-songs game.csv] <path_to_audio_file>")
+		  os.Exit(1)
+	      }
+	      var songIDs []uint32
+	      if *songsCSV != "" {
+		  var err error
+		  songIDs, err = parseSongIDsFromCSV(*songsCSV)
+		  if err != nil {
+		      fmt.Fprintf(os.Stderr, "Error reading songs CSV: %v\n", err)
+		      os.Exit(1)
+		  }
+	      }
+	      recognizeCmd(recCmd.Arg(0), songIDs)
+
+
 	default:
 		fmt.Println("Expected 'find', 'download', 'erase', 'save', or 'serve' subcommands")
 		fmt.Println("\nUsage examples:")

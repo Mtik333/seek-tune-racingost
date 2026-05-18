@@ -20,6 +20,87 @@ type Match struct {
 	Score      float64
 }
 
+  type RawMatch struct {
+      SongID      uint32  `json:"songId"`
+      Score       float64 `json:"score"`
+      Confidence  float64 `json:"confidence"`  // score / total fingerprints
+      TimestampMs int32   `json:"timestampMs"`
+  }
+
+
+  func FindRawMatches(
+      sampleFingerprint map[uint32]uint32,
+      topN int,
+      songIDs []uint32,   // pass nil or empty to search all
+  ) ([]RawMatch, error) {
+      addresses := make([]uint32, 0, len(sampleFingerprint))
+      for address := range sampleFingerprint {
+          addresses = append(addresses, address)
+      }
+
+      dbClient, err := db.NewDBClient()
+      if err != nil {
+          return nil, err
+      }
+      defer dbClient.Close()
+
+      couples, err := dbClient.GetCouplesFiltered(addresses, songIDs)
+      if err != nil {
+          return nil, err
+      }
+
+      matches := map[uint32][][2]uint32{}
+      for address, cs := range couples {
+          for _, c := range cs {
+              matches[c.SongID] = append(
+                  matches[c.SongID],
+                  [2]uint32{sampleFingerprint[address], c.AnchorTimeMs},
+              )
+          }
+      }
+
+      var result []RawMatch
+      for songID, times := range matches {
+          offsetCounts := make(map[int32]int)
+          for _, timePair := range times {
+              sampleTime := int32(timePair[0])
+              dbTime := int32(timePair[1])
+              offsetBucket := (dbTime - sampleTime) / 100
+              offsetCounts[offsetBucket]++
+          }
+
+          var maxCount int
+          var dominantBucket int32
+          for bucket, count := range offsetCounts {
+              if count > maxCount {
+                  maxCount = count
+                  dominantBucket = bucket
+              }
+          }
+
+	  totalFingerprints := float64(len(sampleFingerprint))
+
+	  result = append(result, RawMatch{
+	      SongID:      songID,
+	      Score:       float64(maxCount),
+	      Confidence:  float64(maxCount) / totalFingerprints,
+	      TimestampMs: dominantBucket * 100,
+	  })
+
+      }
+
+      sort.Slice(result, func(i, j int) bool {
+          return result[i].Score > result[j].Score
+      })
+
+      if topN > 0 && len(result) > topN {
+          result = result[:topN]
+      }
+
+      return result, nil
+  }
+
+
 // FindMatches analyzes the audio sample to find matching songs in the database.
 func FindMatches(audioSample []float64, audioDuration float64, sampleRate int) ([]Match, time.Duration, error) {
 	startTime := time.Now()
@@ -38,13 +119,14 @@ func FindMatches(audioSample []float64, audioDuration float64, sampleRate int) (
 		sampleFingerprintMap[address] = couple.AnchorTimeMs
 	}
 
-	matches, _, _ := FindMatchesFGP(sampleFingerprintMap)
+	matches, _, _ := FindMatchesFGP(sampleFingerprintMap, nil)
 
 	return matches, time.Since(startTime), nil
 }
 
+
 // FindMatchesFGP uses the sample fingerprint to find matching songs in the database.
-func FindMatchesFGP(sampleFingerprint map[uint32]uint32) ([]Match, time.Duration, error) {
+  func FindMatchesFGP(sampleFingerprint map[uint32]uint32, songIDs []uint32) ([]Match, time.Duration, error) {
 	startTime := time.Now()
 	logger := utils.GetLogger()
 
@@ -59,7 +141,7 @@ func FindMatchesFGP(sampleFingerprint map[uint32]uint32) ([]Match, time.Duration
 	}
 	defer db.Close()
 
-	m, err := db.GetCouples(addresses)
+	m, err := db.GetCouplesFiltered(addresses, songIDs)
 	if err != nil {
 		return nil, time.Since(startTime), err
 	}

@@ -133,7 +133,7 @@ func dlTrack(tracks []Track, path string) (int, error) {
 			fileName := fmt.Sprintf("%s - %s", trackCopy.Title, trackCopy.Artist)
 			filePath := filepath.Join(path, fileName)
 
-			filePath, err = downloadYTaudio(ytID, filePath)
+			filePath, err = downloadYTaudio(ytID, filePath, "")
 			if err != nil {
 				logMessage := fmt.Sprintf("'%s' by '%s' could not be downloaded", trackCopy.Title, trackCopy.Artist)
 				logger.ErrorContext(ctx, logMessage, slog.Any("error", xerrors.New(err)))

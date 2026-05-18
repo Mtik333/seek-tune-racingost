@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"encoding/json"
 	"log"
 	"log/slog"
 	"math"
@@ -34,7 +35,7 @@ const (
 
 var yellow = color.New(color.FgYellow)
 
-func find(filePath string) {
+  func find(filePath string, songIDs []uint32) {
 	wavFilePath, err := wav.ConvertToWAV(filePath)
 	if err != nil {
 		yellow.Println("Error converting to WAV:", err)
@@ -52,7 +53,7 @@ func find(filePath string) {
 		sampleFingerprint[address] = couple.AnchorTimeMs
 	}
 
-	matches, searchDuration, err := shazam.FindMatchesFGP(sampleFingerprint)
+	matches, searchDuration, err := shazam.FindMatchesFGP(sampleFingerprint, songIDs)
 	if err != nil {
 		yellow.Println("Error finding matches:", err)
 		return
@@ -380,3 +381,31 @@ func saveSong(filePath string, force bool) error {
 
 	return nil
 }
+
+  func recognizeCmd(filePath string, songIDs []uint32) {
+      fingerprint, err := shazam.FingerprintAudio(filePath, 0)
+      if err != nil {
+          fmt.Fprintf(os.Stderr, "Error fingerprinting: %v\n", err)
+          os.Exit(1)
+      }
+      
+      sampleFP := make(map[uint32]uint32, len(fingerprint))
+      for address, couple := range fingerprint {
+          sampleFP[address] = couple.AnchorTimeMs
+      }   
+      
+	matches, err := shazam.FindRawMatches(sampleFP, 5, songIDs)
+      if err != nil { 
+          fmt.Fprintf(os.Stderr, "Error finding matches: %v\n", err)
+          os.Exit(1)
+      }
+      
+      data, err := json.Marshal(matches)
+      if err != nil {
+          fmt.Fprintf(os.Stderr, "Error encoding JSON: %v\n", err)
+          os.Exit(1)
+      }   
+  
+      fmt.Println(string(data))
+  }   
+
