@@ -1,17 +1,25 @@
-<h1 align="center">SeekTune :musical_note:</h1>
+<h1 align="center">SeekTune (tweaked for RacingSoundtracks.com) :musical_note:</h1>
 
 <p align="center">
-  <a href="https://drive.google.com/file/d/1I2esH2U4DtXHsNgYbUi4OL-ukV5i_1PI/view" target="_blank">
-  <img src="https://github.com/user-attachments/assets/e4d01e9c-05cf-4f35-acbc-1e3cd79d1e00" 
-       alt="screenshot" 
-       width="500">
-</a>
-</p>
+99% of implementation made by <a href="https://github.com/cgzirim">cgzirim</a>. See links below where he explains stuff
 
-<p align="center"><a href="https://drive.google.com/file/d/1I2esH2U4DtXHsNgYbUi4OL-ukV5i_1PI/view" target="_blank">Demo in Video</a> | <a href="https://www.youtube.com/watch?v=a0CVCcb0RJM" target="_blank">How it was made (YouTube)</a></p>
+<p align="center">
+<a href="https://drive.google.com/file/d/1I2esH2U4DtXHsNgYbUi4OL-ukV5i_1PI/view" target="_blank">Demo in Video</a> | <a href="https://www.youtube.com/watch?v=a0CVCcb0RJM" target="_blank">How it was made (YouTube)</a></p>
 
 ## Description 🎼
-SeekTune is an implementation of Shazam's song recognition algorithm based on insights from these [resources](#resources--card_file_box). It integrates Spotify and YouTube APIs to find and download songs.
+SeekTune is an implementation of Shazam's song recognition algorithm based on insights from these [resources](#resources--card_file_box). 
+
+Original code has been slightly tweaked to get rid of functionalities not useful for me in context of my website - <a href="https://racingsoundtracks.com/content/home">RacingSoundtracks.com</a>. Few commands were also added.
+
+This fork's goal is to fingerprint music from <a href="https://racingsoundtracks.com/content/home">RacingSoundtracks.com</a> that is not released on any kind of streaming service, like Spotify, Deezer, Tidal or Apple Music. This shoud help users to identify songs that Shazam would not give result (or "right result") about
+
+Removed functionalities:
+- Building "songs" table
+   - I don't need it because my website has already metadata of artists and ID of song
+- Client front-end + Wasm
+   - Functionality is supposed to be integrated with my website so I'm not going to use this front-end
+- Docker scripts
+   - Again, for achieving my goal I simply don't need to use that
 
 ## Installation :desktop_computer:
 ### Prerequisites
@@ -21,35 +29,11 @@ SeekTune is an implementation of Shazam's song recognition algorithm based on in
 - YT-DLP: [Install YT-DLP](https://github.com/yt-dlp/yt-dlp/wiki/Installation)
 
 ### Steps
-📦 Clone the repository:
+📦 Clone the repository (either original or this one):
 ```
-git clone https://github.com/cgzirim/seek-tune.git
-cd seek-tune
+git clone https://github.com/Mtik333/seek-tune-racingost.git
+cd seek-tune-racingost
 ```
-#### 🎧 Spotify API Setup
-
-1. Get credentials: Follow the [official getting started guide](https://developer.spotify.com/documentation/web-api/tutorials/getting-started) to create a Spotify app and obtain your **Client ID** and **Client Secret**.
-
-2. Configure: Create a `.env` file in the `server` directory:
-   ```bash
-   SPOTIFY_CLIENT_ID=your-client-id
-   SPOTIFY_CLIENT_SECRET=your-client-secret
-   ```
-
-The app will automatically fetch and cache access tokens as needed.
-
-
-#### 🐳 Set Up with Docker
-Prerequisites: [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
-1. Build and run the application:
-   ```Bash
-   docker-compose up --build
-   ```
-   Visit the app at http://localhost:8080
-2. To stop the application:
-   ```Bash
-   docker-compose down
-   ```
 
 #### 💻 Set Up Natively
 Install dependencies for the backend
@@ -65,103 +49,94 @@ npm install
 
 ## Usage (Native Setup) :bicyclist:
 
-#### ▸ Start the Client App 🏃‍♀️‍➡️ 
-```
-# Assuming you're in the client directory:
+Here I will only list changed or introduced commands + any dependencies
 
-npm start
-```
 #### ▸ Start the Backend App 🏃‍♀️ 
-In a separate terminal window:
 ```
 cd server
 go run *.go serve [-proto <http|https> (default: http)] [-port <port number> (default: 5000)]
 ```
-#### ▸ Download a Song 📥 
-Note: A link from Spotify's mobile app won't work. You can copy the link from either the desktop or web app.
-```
-go run *.go download <https://open.spotify.com/.../...>
-```  
-#### ▸ Save local songs to DB (supports all audio formats) 🗃️   
-```
-go run *.go save [-f|--force] <path_to_song_file_or_dir_of_songs>
-```
-The `-f` or `--force` flag allows saving the song even if a YouTube ID is not found. Note that the frontend will not display matches without a YouTube ID.  
+I think I used port 5500 despite what's the default value
 
-Note: if `*.go` does not work try to use `./...` instead.
-  
-#### ▸ Find matches for a song/recording 🔎
-```
-go run *.go find <path-to-wav-file>
-```
-#### ▸ Delete fingerprints and songs 🗑️ 
-```
-# Delete only database (default)
-go run *.go erase
-go run *.go erase db
+#### ▸ Compile the app to executable
 
-# Delete both database and song files
-go run *.go erase all
+Seems that this is the command
 ```
+cd server
+go build -tags netgo -ldflags '-s -w' -o seek-tune
+```
+#### ▸ Find "raw" matches for a song/recording based on song-id filter 🔎
 
-## Example :film_projector:  
-Download a song 
 ```
-$ go run *.go download https://open.spotify.com/track/4pqwGuGu34g8KtfN8LDGZm?si=b3180b3d61084018
-Getting track info...
-Now, downloading track...
-Fingerprints saved in MongoDB successfully
-'Voilà' by 'André Rieu' was downloaded
-Total tracks downloaded: 1
+./seek-tune recgonize [-songs] <path_to_csv_with_songids.csv> recording.wav
+```
+OR
+```
+go run *.go recgonize [-songs] <path_to_csv_with_songids.csv> recording.wav
+```
+Second argument is a CSV file which consists just of IDs of songs. The reason for this parameter is following: I'm aiming to make website support recognizing song per certain game, or game series. 
+
+For this reason, I want to limit number of fingerprints analyzed to the actual scope of potential search by the user. This also causes this one to show only top 5 matches, in a JSON format because that's easier to communicate with the website
+
+Example CSV is just a plain list of integers, so looks like this:
+
+```
+148
+149
+150
+151
+152
+153
 ```
 
-Find matches of a song
+Example output
 ```
-$ go run *.go find songs/Voilà\ -\ André\ Rieu.wav
-Top 20 matches:
-        - Voilà by André Rieu, score: 5390686.00
-        - I Am a Child of God by One Voice Children's Choir, score: 2539.00
-        - I Have A Dream by ABBA, score: 2428.00
-        - SOS by ABBA, score: 2327.00
-        - Sweet Dreams (Are Made of This) - Remastered by Eurythmics, score: 2213.00
-        - The Winner Takes It All by ABBA, score: 2094.00
-        - Sleigh Ride by One Voice Children's Choir, score: 2091.00
-        - Believe by Cher, score: 2089.00
-        - Knowing Me, Knowing You by ABBA, score: 1958.00
-        - Gimme! Gimme! Gimme! (A Man After Midnight) by ABBA, score: 1941.00
-        - Take A Chance On Me by ABBA, score: 1932.00
-        - Don't Stop Me Now - Remastered 2011 by Queen, score: 1892.00
-        - I Do, I Do, I Do, I Do, I Do by ABBA, score: 1853.00
-        - Everywhere - 2017 Remaster by Fleetwood Mac, score: 1779.00
-        - You Will Be Found by One Voice Children's Choir, score: 1664.00
-        - J'Imagine by One Voice Children's Choir, score: 1658.00
-        - When You Believe by One Voice Children's Choir, score: 1629.00
-        - When Love Was Born by One Voice Children's Choir, score: 1484.00
-        - Don't Stop Believin' (2022 Remaster) by Journey, score: 1465.00
-        - Lay All Your Love On Me by ABBA, score: 1436.00
+./seek-tune recognize drknow_sample3.wav -songs tmp/filter.csv
 
-Search took: 856.386557ms
-
-Final prediction: Voilà by André Rieu , score: 5390686.00
+[{"songId":152,"score":24,"confidence":0.03625377643504532,"timestampMs":135400},{"songId":150,"score":9,"confidence":0.013595166163141994,"timestampMs":132600},{"songId":151,"score":9,"confidence":0.013595166163141994,"timestampMs":121600},{"songId":148,"score":8,"confidence":0.012084592145015106,"timestampMs":99800},{"songId":149,"score":7,"confidence":0.010574018126888218,"timestampMs":127700}]
 ```
 
-## Database Options 👯‍♀️ 
-This application uses SQLite as the default database, but you can switch to MongoDB if preferred.   
+#### ▸ Export fingerprints to database file or CSV file    
+There are some possibilities
+```
+go run *.go export [-o] <path_to_sqlite_db_file.sqlite/csv> [-browser] <browser_name> [-delay] <delay_as_integer> [-jitter] <jitter_integer> [-retries] <retries_integer>
+```
+OR
+```
+./seek-tune export [-o] <path_to_sqlite_db_file.sqlite/csv> [-browser] <browser_name> [-delay] <delay_as_integer> [-jitter] <jitter_integer> [-retries] <retries_integer>
+```
+Export is basically downloading songs from YouTube and generate fingerprints. Depending on "conditions", it can generate SQL file:
+```
+./seek-tune export songs.csv
+```
+It can also generate database file (SQLite) when -o parameter is provided
+```
+./seek-tune export songs.csv -o fingerprints.db
+```
+Finally it can also export as CSV
+```
+./seek-tune export songs.csv -o fingerprints.csv
+```
+Format of songs.csv (input file) is simply a comma separated list of lines, where first column is song_id, and second column is source ID of YouTube video.
+```
+148,x4EmAnC_DYo
+149,RdWwkFSLznM
+150,EB1c1A8XJd8
+```
+If you are afraid that YouTube might block YT-DLP due to fetching data too fast, parameters such as:
+- browser
+- delay
+- jitter
+- retries
 
-#### Using MongoDB
-1. [Install MongoDB](https://www.mongodb.com/docs/manual/installation/)
-2. Configure MongoDB Connection:  
-   To connect to your MongoDB instance, set the following environment variables:
+Should help in preventing that from happening, to make it more look like some user actually trying to stream these resources. I haven't tested much so far, as the time of writing though.
 
-   * `DB_TYPE`: Set this to "mongo" to indicate using MongoDB.
-   * `DB_USER`: The username for your MongoDB database.
-   * `DB_PASS`: The password for your MongoDB database.
-   * `DB_NAME`: The name of the MongoDB database you want to use.
-   * `DB_HOST`: The hostname or IP address of your MongoDB server.
-   * `DB_PORT`: The port number on which your MongoDB server is listening.
-
-   **Note:** The database connection URI is constructed using the environment variables.  
-   If the `DB_USER` or `DB_PASS` environment variables are not set, it defaults to connecting to `mongodb://localhost:27017`.
+What is important - if you already fingerprinted songs with certain IDs, trying to re-fingerprint will simply make application skip these links and proceed to further ones in the source file.
+```
+[1/16086] song_id=1        already fingerprinted, skipping
+[2/16086] song_id=2        already fingerprinted, skipping
+[3/16086] song_id=3        already fingerprinted, skipping
+```
 
 ## Resources  :card_file_box:
 - [How does Shazam work - Coding Geek](https://drive.google.com/file/d/1ahyCTXBAZiuni6RTzHzLoOwwfTRFaU-C/view) (main resource)
@@ -170,11 +145,18 @@ This application uses SQLite as the default database, but you can switch to Mong
 - [Creating Shazam in Java](https://www.royvanrijn.com/blog/2010/06/creating-shazam-in-java/)
 
 
-## Author :black_nib:
+## Author (of original code and repository) :black_nib:
 - Chigozirim Igweamaka
   - Connect with me on [LinkedIn](https://www.linkedin.com/in/ichigozirim/).
   - Check out my other [GitHub](https://github.com/cgzirim) projects.
   - Follow me on [Twitter](https://twitter.com/cgzirim).
  
+
+## Author (of this abyssmal change) :black_nib:
+- Mateusz Walendziuk
+  - [LinkedIn](https://www.linkedin.com/in/ichigozirim/).
+  - [GitHub](https://github.com/mtik333) projects.
+
+
 ## License :lock:
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
