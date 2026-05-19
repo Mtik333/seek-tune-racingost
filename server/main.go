@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"song-recognition/utils"
-
 	"github.com/joho/godotenv"
 	"github.com/mdobak/go-xerrors"
 )
@@ -38,7 +37,7 @@ func main() {
 		fmt.Println("  erase [db | all]  (default: db)")
 		fmt.Println("  save [-f|--force] <path_to_file_or_dir>")
 		fmt.Println("  export [-o output.sql] <path_to_csv>")
-		fmt.Println("  serve [-proto <http|https>] [-p <port>]")
+		fmt.Println("  serve [-p <port>]")
 		os.Exit(1)
 	}
 	_ = godotenv.Load()
@@ -70,12 +69,12 @@ func main() {
 		}
 		url := os.Args[2]
 		download(url)
-	case "serve":
-		serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
-		protocol := serveCmd.String("proto", "http", "Protocol to use (http or https)")
-		port := serveCmd.String("p", "5000", "Port to use")
-		serveCmd.Parse(os.Args[2:])
-		serve(*protocol, *port)
+  case "serve":
+      serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
+      port := serveCmd.String("p", "5000", "Port to listen on")
+      serveCmd.Parse(os.Args[2:])
+      serve(*port)
+
 	case "erase":
 		// Default is to clear only database (db mode)
 		dbOnly := true

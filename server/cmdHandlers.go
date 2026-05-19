@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"encoding/json"
 	"log"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -21,11 +21,6 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	socketio "github.com/googollee/go-socket.io"
-	"github.com/googollee/go-socket.io/engineio"
-	"github.com/googollee/go-socket.io/engineio/transport"
-	"github.com/googollee/go-socket.io/engineio/transport/polling"
-	"github.com/googollee/go-socket.io/engineio/transport/websocket"
 	"github.com/mdobak/go-xerrors"
 )
 
@@ -116,89 +111,82 @@ func download(spotifyURL string) {
 	}
 }
 
-func serve(protocol, port string) {
-	protocol = strings.ToLower(protocol)
-	var allowOriginFunc = func(r *http.Request) bool {
-		return true
-	}
+  func serve(port string) {
+        apiKey := os.Getenv("API_KEY")
+        if apiKey == "" {
+                log.Fatal("API_KEY environment variable is not set")
+        }
 
-	server := socketio.NewServer(&engineio.Options{
-		Transports: []transport.Transport{
-			&polling.Transport{
-				CheckOrigin: allowOriginFunc,
-			},
-			&websocket.Transport{
-				CheckOrigin: allowOriginFunc,
-			},
-		},
-	})
+        http.HandleFunc("/recognize", func(w http.ResponseWriter, r *http.Request) {
+                if r.Method != http.MethodPost {
+                        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+                        return
+                }
 
-	server.OnConnect("/", func(socket socketio.Conn) error {
-		socket.SetContext("")
-		log.Println("CONNECTED: ", socket.ID())
+                if r.Header.Get("X-API-Key") != apiKey {
+                        http.Error(w, "unauthorized", http.StatusUnauthorized)
+                        return
+                }
 
-		return nil
-	})
+                r.ParseMultipartForm(32 << 20)
+                file, header, err := r.FormFile("audio")
+                if err != nil {
+                        http.Error(w, "missing audio field", http.StatusBadRequest)
+                        return
+                }
+                defer file.Close()
 
-	server.OnEvent("/", "totalSongs", handleTotalSongs)
-	server.OnEvent("/", "newDownload", handleSongDownload)
-	server.OnEvent("/", "newRecording", handleNewRecording)
-	server.OnEvent("/", "newFingerprint", handleNewFingerprint)
+                tmp, err := os.CreateTemp("tmp", "recognize-*"+filepath.Ext(header.Filename))
+                if err != nil {
+                        http.Error(w, "internal error", http.StatusInternalServerError)
+                        return
+                }
+                defer os.Remove(tmp.Name())
 
-	server.OnError("/", func(s socketio.Conn, e error) {
-		log.Println("meet error:", e)
-	})
+                if _, err := io.Copy(tmp, file); err != nil {
+                        tmp.Close()
+                        http.Error(w, "internal error", http.StatusInternalServerError)
+                        return
+                }
+                tmp.Close()
 
-	server.OnDisconnect("/", func(s socketio.Conn, reason string) {
-		log.Println("closed", reason)
-	})
+                var songIDs []uint32
+                if csvPath := r.FormValue("songs"); csvPath != "" {
+                        songIDs, err = parseSongIDsFromCSV(csvPath)
+                        if err != nil {
+                                http.Error(w, "invalid songs filter", http.StatusBadRequest)
+                                return
+                        }
+                }
 
-	go func() {
-		if err := server.Serve(); err != nil {
-			log.Fatalf("socketio listen error: %s\n", err)
-		}
-	}()
-	defer server.Close()
+                fingerprint, err := shazam.FingerprintAudio(tmp.Name(), 0)
+                if err != nil {
+                        http.Error(w, "fingerprinting failed", http.StatusInternalServerError)
+                        return
+                }
 
-	serveHTTPS := protocol == "https"
+                sampleFP := make(map[uint32]uint32, len(fingerprint))
+                for address, couple := range fingerprint {
+                        sampleFP[address] = couple.AnchorTimeMs
+                }
 
-	serveHTTP(server, serveHTTPS, port)
-}
+                matches, err := shazam.FindRawMatches(sampleFP, 5, songIDs)
+                if err != nil {
+                        http.Error(w, "recognition failed", http.StatusInternalServerError)
+                        return
+                }
 
-func serveHTTP(socketServer *socketio.Server, serveHTTPS bool, port string) {
-	http.Handle("/socket.io/", socketServer)
-	http.Handle("/", http.FileServer(http.Dir("static")))
+                w.Header().Set("Content-Type", "application/json")
+                json.NewEncoder(w).Encode(matches)
+        })
 
-	if serveHTTPS {
-		httpsAddr := ":" + port
-		httpsServer := &http.Server{
-			Addr: httpsAddr,
-			TLSConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-			Handler: socketServer,
-		}
+        addr := ":" + port
+        log.Printf("Starting HTTP server on %s\n", addr)
+        if err := http.ListenAndServe(addr, nil); err != nil {
+                log.Fatalf("HTTP server error: %v", err)
+        }
+  }
 
-		cert_key_default := "/etc/letsencrypt/live/localport.online/privkey.pem"
-		cert_file_default := "/etc/letsencrypt/live/localport.online/fullchain.pem"
-
-		cert_key := utils.GetEnv("CERT_KEY", cert_key_default)
-		cert_file := utils.GetEnv("CERT_FILE", cert_file_default)
-		if cert_key == "" || cert_file == "" {
-			log.Fatal("Missing cert")
-		}
-
-		log.Printf("Starting HTTPS server on %s\n", httpsAddr)
-		if err := httpsServer.ListenAndServeTLS(cert_file, cert_key); err != nil {
-			log.Fatalf("HTTPS server ListenAndServeTLS: %v", err)
-		}
-	}
-
-	log.Printf("Starting HTTP server on port %v", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("HTTP server ListenAndServe: %v", err)
-	}
-}
 
 func erase(songsDir string, dbOnly bool, all bool) {
 	logger := utils.GetLogger()
