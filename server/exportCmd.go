@@ -139,8 +139,17 @@
 	      defer unavailableFile.Close()
 	  }
 
+        mainDB, err := db.NewDBClient()
+        if err != nil {
+                fmt.Printf("Warning: could not open main DB for skip check: %v\n", err)
+                mainDB = nil
+        } else {
+                defer mainDB.Close()
+        }
+
         successCount := 0
         errorCount := 0
+        var lastDownloadTime time.Time
 
         for i, record := range records {
                 if len(record) < 2 {
@@ -173,6 +182,24 @@
 		      }
 		  }
 
+		  if mainDB != nil {
+		      exists, err := mainDB.HasFingerprints(songID)
+		      if err == nil && exists {
+			  fmt.Printf("[%d/%d] song_id=%-8s already in main DB, skipping\n", i+1, total, songIDStr)
+			  successCount++
+			  continue
+		      }
+		  }
+
+                if !lastDownloadTime.IsZero() {
+                        jitter := rand.Intn(jitterSeconds + 1)
+                        target := time.Duration(delaySeconds+jitter) * time.Second
+                        if elapsed := time.Since(lastDownloadTime); elapsed < target {
+                                time.Sleep(target - elapsed)
+                        }
+                }
+                lastDownloadTime = time.Now()
+
                 fmt.Printf(
                         "[%d/%d] song_id=%-8s ytID=%-15s downloading...",
                         i+1, total, songIDStr, ytID,
@@ -187,7 +214,7 @@
 		  time.Sleep(backoff)
 	      }
 	      audioPath, downloadErr = spotify.DownloadByYTID(ytID, "tmp", browser)
-	      if downloadErr == nil || downloadErr == spotify.ErrVideoUnavailable {
+	      if downloadErr == nil || downloadErr == spotify.ErrVideoUnavailable || downloadErr == spotify.ErrPrivateVideo {
 		  break
 	      }
 	  }
@@ -199,16 +226,27 @@
 	      errorCount++
 	      continue
 	  }
+	  if downloadErr == spotify.ErrPrivateVideo {
+	      fmt.Printf(" SKIPPED (private video)\n")
+	      if unavailableFile != nil {
+		  fmt.Fprintf(unavailableFile, "%s\n", songIDStr)
+	      }
+	      errorCount++
+	      continue
+	  }	
+	  if downloadErr == spotify.ErrVideoViolation {
+	      fmt.Printf(" SKIPPED (video violating YouTube)\n")
+	      if unavailableFile != nil {
+		  fmt.Fprintf(unavailableFile, "%s\n", songIDStr)
+	      }
+	      errorCount++
+	      continue
+	  }		  
 	  if downloadErr != nil {
 	      fmt.Printf(" FAILED (download): %v\n", downloadErr)
 	      errorCount++
 	      continue
 	  }
-
-	  // sleep between songs (after download, before next iteration)
-	  sleepDur := time.Duration(delaySeconds+rand.Intn(jitterSeconds+1)) * time.Second
-	  time.Sleep(sleepDur)
-
 
                 fmt.Print(" fingerprinting...")
 

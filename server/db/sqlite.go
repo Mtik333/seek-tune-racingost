@@ -29,6 +29,18 @@ func NewSQLiteClient(dataSourceName string) (*SQLiteClient, error) {
 		return nil, fmt.Errorf("error connecting to SQLite: %s", err)
 	}
 
+	pragmas := []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA cache_size=-262144", // 256 MB (safe on 4 GB shared with JVM)
+		"PRAGMA mmap_size=1073741824", // 1 GB
+		"PRAGMA synchronous=NORMAL",
+	}
+	for _, p := range pragmas {
+		if _, err := db.Exec(p); err != nil {
+			return nil, fmt.Errorf("error setting pragma (%s): %s", p, err)
+		}
+	}
+
 	err = createTables(db)
 	if err != nil {
 		return nil, fmt.Errorf("error creating tables: %s", err)

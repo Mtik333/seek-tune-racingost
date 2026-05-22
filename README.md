@@ -68,11 +68,11 @@ go build -tags netgo -ldflags '-s -w' -o seek-tune
 #### ▸ Find "raw" matches for a song/recording based on song-id filter 🔎
 
 ```
-./seek-tune recgonize [-songs] <path_to_csv_with_songids.csv> recording.wav
+./seek-tune recognize [-songs] <path_to_csv_with_songids.csv> recording.wav
 ```
 OR
 ```
-go run *.go recgonize [-songs] <path_to_csv_with_songids.csv> recording.wav
+go run *.go recognize [-songs] <path_to_csv_with_songids.csv> recording.wav
 ```
 Second argument is a CSV file which consists just of IDs of songs. The reason for this parameter is following: I'm aiming to make website support recognizing song per certain game, or game series. 
 

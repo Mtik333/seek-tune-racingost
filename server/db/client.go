@@ -18,6 +18,7 @@ type DBClient interface {
 	GetSongByYTID(ytID string) (Song, bool, error)
 	GetSongByKey(key string) (Song, bool, error)
 	DeleteSongByID(songID uint32) error
+	HasFingerprints(songID uint32) (bool, error)
 	DeleteCollection(collectionName string) error
 }
 

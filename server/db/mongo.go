@@ -195,6 +195,19 @@ func (db *MongoClient) DeleteSongByID(songID uint32) error {
 	return nil
 }
 
+func (db *MongoClient) HasFingerprints(songID uint32) (bool, error) {
+	collection := db.client.Database("song-recognition").Collection("fingerprints")
+	count, err := collection.CountDocuments(
+		context.Background(),
+		bson.M{"songID": songID},
+		options.Count().SetLimit(1),
+	)
+	if err != nil {
+		return false, fmt.Errorf("error checking fingerprints for songID %d: %v", songID, err)
+	}
+	return count > 0, nil
+}
+
 func (db *MongoClient) DeleteCollection(collectionName string) error {
 	collection := db.client.Database("song-recognition").Collection(collectionName)
 	err := collection.Drop(context.Background())

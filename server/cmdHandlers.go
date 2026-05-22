@@ -127,9 +127,9 @@ func download(spotifyURL string) {
                         http.Error(w, "unauthorized", http.StatusUnauthorized)
                         return
                 }
-
                 r.ParseMultipartForm(32 << 20)
                 file, header, err := r.FormFile("audio")
+		log.Printf("recognize request from %s — file: %s", r.RemoteAddr, header.Filename)
                 if err != nil {
                         http.Error(w, "missing audio field", http.StatusBadRequest)
                         return
@@ -150,14 +150,26 @@ func download(spotifyURL string) {
                 }
                 tmp.Close()
 
-                var songIDs []uint32
-                if csvPath := r.FormValue("songs"); csvPath != "" {
-                        songIDs, err = parseSongIDsFromCSV(csvPath)
-                        if err != nil {
-                                http.Error(w, "invalid songs filter", http.StatusBadRequest)
-                                return
-                        }
-                }
+		  var songIDs []uint32
+		  if csvPath := r.FormValue("songs"); csvPath != "" {
+		      songIDs, err = parseSongIDsFromCSV(csvPath)
+		      if err != nil {
+			  http.Error(w, "invalid songs filter", http.StatusBadRequest)
+			  return
+		      }
+		  } else if songIdsStr := r.FormValue("songIds"); songIdsStr != "" {
+		      for _, idStr := range strings.Split(songIdsStr, ",") {
+			  idStr = strings.TrimSpace(idStr)
+			  if idStr == "" {
+			      continue
+			  }
+			  id, err := strconv.ParseUint(idStr, 10, 32)
+			  if err == nil {
+			      songIDs = append(songIDs, uint32(id))
+			  }
+		      }
+		  }
+
 
                 fingerprint, err := shazam.FingerprintAudio(tmp.Name(), 0)
                 if err != nil {
@@ -175,6 +187,7 @@ func download(spotifyURL string) {
                         http.Error(w, "recognition failed", http.StatusInternalServerError)
                         return
                 }
+		log.Printf("recognize complete — %d matches returned", len(matches))
 
                 w.Header().Set("Content-Type", "application/json")
                 json.NewEncoder(w).Encode(matches)
