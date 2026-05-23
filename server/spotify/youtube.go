@@ -25,8 +25,11 @@ import (
 
 const developerKey = ""
   var ErrVideoUnavailable = errors.New("video unavailable")
+  var ErrVideoNotAvailable = errors.New("video is not available")
   var ErrPrivateVideo = errors.New("private video")
   var ErrVideoViolation = errors.New("violating YouTube")
+  var ErrConfirmAge = errors.New("confirm your age")
+  var ErrFormatNotAvailable = errors.New("format is not available")
 
 // https://github.com/BharatKalluri/spotifydl/blob/v0.1.0/src/youtube.go
 func getYoutubeIdWithAPI(spTrack Track) (string, error) {
@@ -281,6 +284,15 @@ func downloadYTaudio(videoURL, outputFilePath string, browser string) (string, e
 	      }
 	      if strings.Contains(string(output), "violating YouTube") {
 		  return "", ErrVideoViolation
+	      }	  
+	      if strings.Contains(string(output), "confirm your age") {
+		  return "", ErrConfirmAge
+	      }
+	      if strings.Contains(string(output), "video is not available") {
+		  return "", ErrVideoNotAvailable
+	      }
+	      if strings.Contains(string(output), "format is not available") {
+		  return "", ErrFormatNotAvailable
 	      }	      
 	      logger.Error("yt-dlp command failed", slog.String("output", string(output)), slog.Any("error", err))
 	      return "", err

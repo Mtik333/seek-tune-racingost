@@ -10,6 +10,7 @@
         "song-recognition/db"
         "song-recognition/shazam"
         "song-recognition/spotify"
+        "song-recognition/wav"
         "strconv"
         "strings"
         "time"
@@ -214,11 +215,11 @@
 		  time.Sleep(backoff)
 	      }
 	      audioPath, downloadErr = spotify.DownloadByYTID(ytID, "tmp", browser)
-	      if downloadErr == nil || downloadErr == spotify.ErrVideoUnavailable || downloadErr == spotify.ErrPrivateVideo {
+	      if downloadErr == nil || downloadErr == spotify.ErrVideoUnavailable || downloadErr == spotify.ErrVideoNotAvailable || downloadErr == spotify.ErrPrivateVideo || downloadErr == spotify.ErrVideoViolation || downloadErr == spotify.ErrConfirmAge || downloadErr == spotify.ErrFormatNotAvailable {
 		  break
 	      }
 	  }
-	  if downloadErr == spotify.ErrVideoUnavailable {
+	  if downloadErr == spotify.ErrVideoUnavailable || downloadErr == spotify.ErrVideoNotAvailable {
 	      fmt.Printf(" SKIPPED (video unavailable)\n")
 	      if unavailableFile != nil {
 		  fmt.Fprintf(unavailableFile, "%s\n", songIDStr)
@@ -241,12 +242,40 @@
 	      }
 	      errorCount++
 	      continue
-	  }		  
+	  }		
+	  if downloadErr == spotify.ErrConfirmAge {
+	      fmt.Printf(" SKIPPED (confirm your age)\n")
+	      if unavailableFile != nil {
+		  fmt.Fprintf(unavailableFile, "%s\n", songIDStr)
+	      }
+	      errorCount++
+	      continue
+	  }
+	  if downloadErr == spotify.ErrFormatNotAvailable {
+	      fmt.Printf(" SKIPPED (format not available)\n")
+	      if unavailableFile != nil {
+		  fmt.Fprintf(unavailableFile, "%s\n", songIDStr)
+	      }
+	      errorCount++
+	      continue
+	  }	  
 	  if downloadErr != nil {
 	      fmt.Printf(" FAILED (download): %v\n", downloadErr)
 	      errorCount++
 	      continue
 	  }
+
+                if meta, metaErr := wav.GetMetadata(audioPath); metaErr == nil {
+                        if durationSec, parseErr := strconv.ParseFloat(meta.Format.Duration, 64); parseErr == nil && durationSec > 600 {
+                                os.Remove(audioPath)
+                                fmt.Printf(" SKIPPED (duration %.0fs exceeds 10 min)\n", durationSec)
+                                if unavailableFile != nil {
+                                        fmt.Fprintf(unavailableFile, "%s\n", songIDStr)
+                                }
+                                errorCount++
+                                continue
+                        }
+                }
 
                 fmt.Print(" fingerprinting...")
 

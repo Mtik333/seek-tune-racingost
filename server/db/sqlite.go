@@ -71,6 +71,12 @@ func createTables(db *sql.DB) error {
     );
     `
 
+	createBlacklistTable := `
+    CREATE TABLE IF NOT EXISTS blacklist (
+        songID INTEGER PRIMARY KEY
+    );
+    `
+
 	_, err := db.Exec(createSongsTable)
 	if err != nil {
 		return fmt.Errorf("error creating songs table: %s", err)
@@ -79,6 +85,11 @@ func createTables(db *sql.DB) error {
 	_, err = db.Exec(createFingerprintsTable)
 	if err != nil {
 		return fmt.Errorf("error creating fingerprints table: %s", err)
+	}
+
+	_, err = db.Exec(createBlacklistTable)
+	if err != nil {
+		return fmt.Errorf("error creating blacklist table: %s", err)
 	}
 
 	return nil
@@ -271,4 +282,46 @@ func (db *SQLiteClient) DeleteCollection(collectionName string) error {
 		return fmt.Errorf("error deleting collection: %v", err)
 	}
 	return nil
+}
+
+func (db *SQLiteClient) DeleteFingerprintsBySongID(songID uint32) error {
+	_, err := db.db.Exec("DELETE FROM fingerprints WHERE songID = ?", songID)
+	if err != nil {
+		return fmt.Errorf("error deleting fingerprints for song %d: %s", songID, err)
+	}
+	return nil
+}
+
+// FillBlacklistByDuration inserts into blacklist all songIDs whose MAX(anchorTimeMs)
+// across fingerprints exceeds thresholdMs. Returns the number of newly inserted rows.
+func (db *SQLiteClient) FillBlacklistByDuration(thresholdMs int) (int, error) {
+	res, err := db.db.Exec(`
+		INSERT OR IGNORE INTO blacklist (songID)
+		SELECT songID
+		FROM fingerprints
+		GROUP BY songID
+		HAVING MAX(anchorTimeMs) > ?
+	`, thresholdMs)
+	if err != nil {
+		return 0, fmt.Errorf("error filling blacklist: %s", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+func (db *SQLiteClient) AddToBlacklist(songID uint32) error {
+	_, err := db.db.Exec("INSERT OR IGNORE INTO blacklist (songID) VALUES (?)", songID)
+	if err != nil {
+		return fmt.Errorf("error adding to blacklist: %s", err)
+	}
+	return nil
+}
+
+func (db *SQLiteClient) IsBlacklisted(songID uint32) (bool, error) {
+	var count int
+	err := db.db.QueryRow("SELECT COUNT(*) FROM blacklist WHERE songID = ?", songID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("error checking blacklist: %s", err)
+	}
+	return count > 0, nil
 }

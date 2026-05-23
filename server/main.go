@@ -30,7 +30,7 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		fmt.Println("Expected 'find', 'download', 'erase', 'save', 'export' or 'serve' subcommands")
+		fmt.Println("Expected 'find', 'download', 'erase', 'save', 'export', 'serve' or 'fingerprint' subcommands")
 		fmt.Println("\nUsage examples:")
 		fmt.Println("  find <path_to_wav_file>")
 		fmt.Println("  download <spotify_url>")
@@ -124,6 +124,23 @@ func main() {
 	      exportFingerprints(exportCmd.Arg(0), *outputFile, *browser, *delay, *jitter, *retries)
 
 	      
+	case "fingerprint":
+		fpCmd := flag.NewFlagSet("fingerprint", flag.ExitOnError)
+		songID := fpCmd.Uint("songId", 0, "Song ID to fingerprint")
+		ytID := fpCmd.String("ytId", "", "YouTube video ID to download")
+		browser := fpCmd.String("browser", "", "Browser to pull cookies from (firefox, chrome, chromium)")
+		force := fpCmd.Bool("force", false, "Skip duration check (fingerprint even if longer than 10 min)")
+		replace := fpCmd.Bool("replace", false, "Delete existing fingerprints and re-fingerprint")
+		fpCmd.Parse(os.Args[2:])
+		if *songID == 0 || *ytID == "" {
+			fmt.Fprintln(os.Stderr, "Usage: seek-tune fingerprint -songId <id> -ytId <ytid> [-browser firefox] [-force] [-replace]")
+			os.Exit(1)
+		}
+		if err := fingerprintSong(uint32(*songID), *ytID, *browser, *force, *replace); err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+
 	  case "recognize":
 	      recCmd := flag.NewFlagSet("recognize", flag.ExitOnError)
 	      songsCSV := recCmd.String("songs", "", "CSV file to limit search to specific song IDs")

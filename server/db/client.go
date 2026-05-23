@@ -20,6 +20,10 @@ type DBClient interface {
 	DeleteSongByID(songID uint32) error
 	HasFingerprints(songID uint32) (bool, error)
 	DeleteCollection(collectionName string) error
+	DeleteFingerprintsBySongID(songID uint32) error
+	FillBlacklistByDuration(thresholdMs int) (int, error)
+	AddToBlacklist(songID uint32) error
+	IsBlacklisted(songID uint32) (bool, error)
 }
 
 type Song struct {

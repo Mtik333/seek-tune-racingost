@@ -383,6 +383,60 @@ func saveSong(filePath string, force bool) error {
 	return nil
 }
 
+func fingerprintSong(songID uint32, ytID string, browser string, force bool, replace bool) error {
+	dbClient, err := db.NewDBClient()
+	if err != nil {
+		return fmt.Errorf("db error: %v", err)
+	}
+	defer dbClient.Close()
+
+	if replace {
+		if err := dbClient.DeleteFingerprintsBySongID(songID); err != nil {
+			return fmt.Errorf("failed to delete existing fingerprints: %v", err)
+		}
+		fmt.Printf("song %d: existing fingerprints deleted\n", songID)
+	} else {
+		exists, err := dbClient.HasFingerprints(songID)
+		if err != nil {
+			return fmt.Errorf("db check error: %v", err)
+		}
+		if exists {
+			fmt.Printf("song %d already fingerprinted, skipping\n", songID)
+			return nil
+		}
+	}
+
+	fmt.Printf("song %d: downloading ytID=%s...\n", songID, ytID)
+	audioPath, err := spotify.DownloadByYTID(ytID, "tmp", browser)
+	if err != nil {
+		return fmt.Errorf("download failed: %v", err)
+	}
+
+	if !force && !replace {
+		if meta, metaErr := wav.GetMetadata(audioPath); metaErr == nil {
+			if durationSec, parseErr := strconv.ParseFloat(meta.Format.Duration, 64); parseErr == nil && durationSec > 600 {
+				os.Remove(audioPath)
+				dbClient.AddToBlacklist(songID)
+				return fmt.Errorf("duration %.0fs exceeds 10 min limit, added to blacklist", durationSec)
+			}
+		}
+	}
+
+	fmt.Printf("song %d: fingerprinting...\n", songID)
+	fingerprints, err := shazam.FingerprintAudio(audioPath, songID)
+	os.Remove(audioPath)
+	if err != nil {
+		return fmt.Errorf("fingerprinting failed: %v", err)
+	}
+
+	if err := dbClient.StoreFingerprints(fingerprints); err != nil {
+		return fmt.Errorf("store failed: %v", err)
+	}
+
+	fmt.Printf("song %d: done (%d fingerprints)\n", songID, len(fingerprints))
+	return nil
+}
+
   func recognizeCmd(filePath string, songIDs []uint32) {
       fingerprint, err := shazam.FingerprintAudio(filePath, 0)
       if err != nil {

@@ -216,3 +216,19 @@ func (db *MongoClient) DeleteCollection(collectionName string) error {
 	}
 	return nil
 }
+
+func (db *MongoClient) DeleteFingerprintsBySongID(songID uint32) error {
+	return fmt.Errorf("blacklist not supported by MongoDB")
+}
+
+func (db *MongoClient) FillBlacklistByDuration(thresholdMs int) (int, error) {
+	return 0, fmt.Errorf("blacklist not supported by MongoDB")
+}
+
+func (db *MongoClient) AddToBlacklist(songID uint32) error {
+	return fmt.Errorf("blacklist not supported by MongoDB")
+}
+
+func (db *MongoClient) IsBlacklisted(songID uint32) (bool, error) {
+	return false, fmt.Errorf("blacklist not supported by MongoDB")
+}
