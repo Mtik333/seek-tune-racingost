@@ -3,21 +3,21 @@ package shazam
 import (
 	"fmt"
 	"song-recognition/models"
-	"song-recognition/utils"
 	"song-recognition/wav"
 )
 
 const (
-	maxFreqBits    = 9
-	maxDeltaBits   = 14
-	targetZoneSize = 5
+	maxFreqBits        = 9
+	maxDeltaBits       = 14
+	targetZoneSize     = 3
+	maxCouplesPerAddr  = 2
 )
 
 // Fingerprint generates fingerprints from a list of peaks and stores them in an array.
 // Each fingerprint consists of an address and a couple.
 // The address is a hash. The couple contains the anchor time and the song ID.
-func Fingerprint(peaks []Peak, songID uint32) map[uint32]models.Couple {
-	fingerprints := map[uint32]models.Couple{}
+func Fingerprint(peaks []Peak, songID uint32) map[uint32][]models.Couple {
+	fingerprints := map[uint32][]models.Couple{}
 
 	for i, anchor := range peaks {
 		for j := i + 1; j < len(peaks) && j <= i+targetZoneSize; j++ {
@@ -26,9 +26,11 @@ func Fingerprint(peaks []Peak, songID uint32) map[uint32]models.Couple {
 			address := createAddress(anchor, target)
 			anchorTimeMs := uint32(anchor.Time * 1000)
 
-			fingerprints[address] = models.Couple{
-				AnchorTimeMs: anchorTimeMs,
-				SongID:       songID,
+			if len(fingerprints[address]) < maxCouplesPerAddr {
+				fingerprints[address] = append(fingerprints[address], models.Couple{
+					AnchorTimeMs: anchorTimeMs,
+					SongID:       songID,
+				})
 			}
 		}
 	}
@@ -57,7 +59,7 @@ func createAddress(anchor, target Peak) uint32 {
 	return address
 }
 
-func FingerprintAudio(songFilePath string, songID uint32) (map[uint32]models.Couple, error) {
+func FingerprintAudio(songFilePath string, songID uint32) (map[uint32][]models.Couple, error) {
 	wavFilePath, err := wav.ConvertToWAV(songFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("error converting input file to WAV: %v", err)
@@ -68,7 +70,7 @@ func FingerprintAudio(songFilePath string, songID uint32) (map[uint32]models.Cou
 		return nil, fmt.Errorf("error reading WAV info: %v", err)
 	}
 
-	fingerprint := make(map[uint32]models.Couple)
+	fingerprint := make(map[uint32][]models.Couple)
 
 	spectro, err := Spectrogram(wavInfo.LeftChannelSamples, wavInfo.SampleRate)
 	if err != nil {
@@ -76,7 +78,9 @@ func FingerprintAudio(songFilePath string, songID uint32) (map[uint32]models.Cou
 	}
 
 	peaks := ExtractPeaks(spectro, wavInfo.Duration, wavInfo.SampleRate)
-	utils.ExtendMap(fingerprint, Fingerprint(peaks, songID))
+	for addr, couples := range Fingerprint(peaks, songID) {
+		fingerprint[addr] = append(fingerprint[addr], couples...)
+	}
 
 	if wavInfo.Channels == 2 {
 		spectro, err = Spectrogram(wavInfo.RightChannelSamples, wavInfo.SampleRate)
@@ -85,7 +89,9 @@ func FingerprintAudio(songFilePath string, songID uint32) (map[uint32]models.Cou
 		}
 
 		peaks = ExtractPeaks(spectro, wavInfo.Duration, wavInfo.SampleRate)
-		utils.ExtendMap(fingerprint, Fingerprint(peaks, songID))
+		for addr, couples := range Fingerprint(peaks, songID) {
+			fingerprint[addr] = append(fingerprint[addr], couples...)
+		}
 	}
 
 	return fingerprint, nil

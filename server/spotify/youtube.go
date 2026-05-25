@@ -227,6 +227,40 @@ func ytSearch(searchTerm string, limit int) (results []*SearchResult, err error)
 	return results, nil
 }
 
+// CheckVideoAvailability checks whether a YouTube video is accessible without downloading it.
+// Returns nil if available, or one of the Err* sentinel errors if not.
+func CheckVideoAvailability(ytID, browser string) error {
+	videoURL := fmt.Sprintf("https://youtube.com/watch?v=%s", ytID)
+
+	args := []string{"--simulate", "--quiet"}
+	if browser != "" {
+		args = append(args, "--cookies-from-browser", browser)
+	}
+	args = append(args, videoURL)
+
+	output, err := exec.Command("yt-dlp", args...).CombinedOutput()
+	if err != nil {
+		s := string(output)
+		switch {
+		case strings.Contains(s, "Video unavailable"):
+			return ErrVideoUnavailable
+		case strings.Contains(s, "video is not available"):
+			return ErrVideoNotAvailable
+		case strings.Contains(s, "Private video"):
+			return ErrPrivateVideo
+		case strings.Contains(s, "violating YouTube"):
+			return ErrVideoViolation
+		case strings.Contains(s, "confirm your age"):
+			return ErrConfirmAge
+		case strings.Contains(s, "format is not available"):
+			return ErrFormatNotAvailable
+		default:
+			return fmt.Errorf("yt-dlp error: %v — %s", err, s)
+		}
+	}
+	return nil
+}
+
 // DownloadByYTID downloads audio for a given YouTube video ID into outputDir.
 // Returns the path to the downloaded WAV file.
   func DownloadByYTID(ytID, outputDir, browser string) (string, error) {

@@ -296,12 +296,14 @@
                         }
 
                 case modeCSV:
-                        for address, couple := range fingerprints {
-                                csvWriter.Write([]string{
-                                        strconv.FormatUint(uint64(address), 10),
-                                        strconv.FormatUint(uint64(couple.AnchorTimeMs), 10),
-                                        strconv.FormatUint(uint64(couple.SongID), 10),
-                                })
+                        for address, couples := range fingerprints {
+                                for _, couple := range couples {
+                                        csvWriter.Write([]string{
+                                                strconv.FormatUint(uint64(address), 10),
+                                                strconv.FormatUint(uint64(couple.AnchorTimeMs), 10),
+                                                strconv.FormatUint(uint64(couple.SongID), 10),
+                                        })
+                                }
                         }
                         csvWriter.Flush()
 
@@ -309,24 +311,30 @@
                         const insertPrefix = "INSERT OR REPLACE INTO fingerprints" +
                                 " (address, anchorTimeMs, songID) VALUES "
 
+                        var totalRows int
+                        for _, couples := range fingerprints {
+                                totalRows += len(couples)
+                        }
                         fmt.Fprintf(
                                 writer,
                                 "-- song_id: %s  ytID: %s  fingerprints: %d\n",
-                                songIDStr, ytID, len(fingerprints),
+                                songIDStr, ytID, totalRows,
                         )
                         fmt.Fprintln(writer, "BEGIN;")
 
                         values := make([]string, 0, sqlBatchSize)
-                        for address, couple := range fingerprints {
-                                row := fmt.Sprintf(
-                                        "(%d,%d,%d)",
-                                        address, couple.AnchorTimeMs, couple.SongID,
-                                )
-                                values = append(values, row)
-                                if len(values) == sqlBatchSize {
-                                        fmt.Fprintf(writer, "%s%s;\n",
-                                                insertPrefix, strings.Join(values, ","))
-                                        values = values[:0]
+                        for address, couples := range fingerprints {
+                                for _, couple := range couples {
+                                        row := fmt.Sprintf(
+                                                "(%d,%d,%d)",
+                                                address, couple.AnchorTimeMs, couple.SongID,
+                                        )
+                                        values = append(values, row)
+                                        if len(values) == sqlBatchSize {
+                                                fmt.Fprintf(writer, "%s%s;\n",
+                                                        insertPrefix, strings.Join(values, ","))
+                                                values = values[:0]
+                                        }
                                 }
                         }
                         if len(values) > 0 {
@@ -338,7 +346,11 @@
                         fmt.Fprintln(writer)
                 }
 
-                fmt.Printf(" done (%d fingerprints)\n", len(fingerprints))
+                var fpCount int
+                for _, couples := range fingerprints {
+                        fpCount += len(couples)
+                }
+                fmt.Printf(" done (%d fingerprints)\n", fpCount)
                 successCount++
         }
 

@@ -102,7 +102,7 @@ func (db *SQLiteClient) Close() error {
 	return nil
 }
 
-func (db *SQLiteClient) StoreFingerprints(fingerprints map[uint32]models.Couple) error {
+func (db *SQLiteClient) StoreFingerprints(fingerprints map[uint32][]models.Couple) error {
 	tx, err := db.db.Begin()
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %s", err)
@@ -115,10 +115,12 @@ func (db *SQLiteClient) StoreFingerprints(fingerprints map[uint32]models.Couple)
 	}
 	defer stmt.Close()
 
-	for address, couple := range fingerprints {
-		if _, err := stmt.Exec(address, couple.AnchorTimeMs, couple.SongID); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("error executing statement: %s", err)
+	for address, couples := range fingerprints {
+		for _, couple := range couples {
+			if _, err := stmt.Exec(address, couple.AnchorTimeMs, couple.SongID); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("error executing statement: %s", err)
+			}
 		}
 	}
 

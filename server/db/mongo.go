@@ -34,24 +34,26 @@ func (db *MongoClient) Close() error {
 	return nil
 }
 
-func (db *MongoClient) StoreFingerprints(fingerprints map[uint32]models.Couple) error {
+func (db *MongoClient) StoreFingerprints(fingerprints map[uint32][]models.Couple) error {
 	collection := db.client.Database("song-recognition").Collection("fingerprints")
 
-	for address, couple := range fingerprints {
-		filter := bson.M{"_id": address}
-		update := bson.M{
-			"$push": bson.M{
-				"couples": bson.M{
-					"anchorTimeMs": couple.AnchorTimeMs,
-					"songID":       couple.SongID,
+	for address, couples := range fingerprints {
+		for _, couple := range couples {
+			filter := bson.M{"_id": address}
+			update := bson.M{
+				"$push": bson.M{
+					"couples": bson.M{
+						"anchorTimeMs": couple.AnchorTimeMs,
+						"songID":       couple.SongID,
+					},
 				},
-			},
-		}
-		opts := options.Update().SetUpsert(true)
+			}
+			opts := options.Update().SetUpsert(true)
 
-		_, err := collection.UpdateOne(context.Background(), filter, update, opts)
-		if err != nil {
-			return fmt.Errorf("error upserting document: %s", err)
+			_, err := collection.UpdateOne(context.Background(), filter, update, opts)
+			if err != nil {
+				return fmt.Errorf("error upserting document: %s", err)
+			}
 		}
 	}
 

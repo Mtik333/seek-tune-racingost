@@ -30,7 +30,7 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		fmt.Println("Expected 'find', 'download', 'erase', 'save', 'export', 'serve' or 'fingerprint' subcommands")
+		fmt.Println("Expected 'find', 'download', 'erase', 'save', 'export', 'serve', 'fingerprint' or 'check' subcommands")
 		fmt.Println("\nUsage examples:")
 		fmt.Println("  find <path_to_wav_file>")
 		fmt.Println("  download <spotify_url>")
@@ -140,6 +140,18 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 			os.Exit(1)
 		}
+
+	case "check":
+		checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
+		browser := checkCmd.String("browser", "", "Browser to pull cookies from (firefox, chrome, chromium)")
+		delay := checkCmd.Int("delay", 2, "Seconds to sleep between checks")
+		jitter := checkCmd.Int("jitter", 1, "Extra random seconds added to delay (0–jitter)")
+		checkCmd.Parse(os.Args[2:])
+		if checkCmd.NArg() < 1 {
+			fmt.Println("Usage: seek-tune check [-browser firefox] [-delay 2] [-jitter 1] <path_to_csv>")
+			os.Exit(1)
+		}
+		checkAvailability(checkCmd.Arg(0), *browser, *delay, *jitter)
 
 	  case "recognize":
 	      recCmd := flag.NewFlagSet("recognize", flag.ExitOnError)

@@ -8,7 +8,7 @@ import (
 
 type DBClient interface {
 	Close() error
-	StoreFingerprints(fingerprints map[uint32]models.Couple) error
+	StoreFingerprints(fingerprints map[uint32][]models.Couple) error
 	GetCouples(addresses []uint32) (map[uint32][]models.Couple, error)
 	GetCouplesFiltered(addresses []uint32, songIDs []uint32) (map[uint32][]models.Couple, error)
 	TotalSongs() (int, error)

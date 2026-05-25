@@ -43,9 +43,11 @@ var yellow = color.New(color.FgYellow)
 		return
 	}
 
-	sampleFingerprint := make(map[uint32]uint32)
-	for address, couple := range fingerprint {
-		sampleFingerprint[address] = couple.AnchorTimeMs
+	sampleFingerprint := make(map[uint32][]uint32)
+	for address, couples := range fingerprint {
+		for _, couple := range couples {
+			sampleFingerprint[address] = append(sampleFingerprint[address], couple.AnchorTimeMs)
+		}
 	}
 
 	matches, searchDuration, err := shazam.FindMatchesFGP(sampleFingerprint, songIDs)
@@ -177,9 +179,11 @@ func download(spotifyURL string) {
                         return
                 }
 
-                sampleFP := make(map[uint32]uint32, len(fingerprint))
-                for address, couple := range fingerprint {
-                        sampleFP[address] = couple.AnchorTimeMs
+                sampleFP := make(map[uint32][]uint32, len(fingerprint))
+                for address, couples := range fingerprint {
+                        for _, couple := range couples {
+                                sampleFP[address] = append(sampleFP[address], couple.AnchorTimeMs)
+                        }
                 }
 
                 matches, err := shazam.FindRawMatches(sampleFP, 5, songIDs)
@@ -444,11 +448,13 @@ func fingerprintSong(songID uint32, ytID string, browser string, force bool, rep
           os.Exit(1)
       }
       
-      sampleFP := make(map[uint32]uint32, len(fingerprint))
-      for address, couple := range fingerprint {
-          sampleFP[address] = couple.AnchorTimeMs
-      }   
-      
+      sampleFP := make(map[uint32][]uint32, len(fingerprint))
+      for address, couples := range fingerprint {
+          for _, couple := range couples {
+              sampleFP[address] = append(sampleFP[address], couple.AnchorTimeMs)
+          }
+      }
+
 	matches, err := shazam.FindRawMatches(sampleFP, 5, songIDs)
       if err != nil { 
           fmt.Fprintf(os.Stderr, "Error finding matches: %v\n", err)
