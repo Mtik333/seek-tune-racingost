@@ -49,54 +49,62 @@ type Match struct {
           return nil, err
       }
 
-      matches := map[uint32][][2]uint32{}
+      // For each song, track which sample addresses fall into each offset bucket.
+      // Using unique addresses (not raw pair counts) avoids inflation from maxCouplesPerAddr:
+      // each DB address may have up to N stored anchor times, but we only want to know
+      // whether *at least one* of them aligns with the sample's time window.
+      type songData struct {
+          bucketAddrs map[int32]map[uint32]struct{} // offsetBucket -> set of sample addresses
+          allAddrs    map[uint32]struct{}            // all sample addresses that matched this song
+      }
+      songMap := make(map[uint32]*songData)
+
       for address, cs := range couples {
           for _, c := range cs {
+              sd := songMap[c.SongID]
+              if sd == nil {
+                  sd = &songData{
+                      bucketAddrs: make(map[int32]map[uint32]struct{}),
+                      allAddrs:    make(map[uint32]struct{}),
+                  }
+                  songMap[c.SongID] = sd
+              }
+              sd.allAddrs[address] = struct{}{}
               for _, sampleTime := range sampleFingerprint[address] {
-                  matches[c.SongID] = append(
-                      matches[c.SongID],
-                      [2]uint32{sampleTime, c.AnchorTimeMs},
-                  )
+                  bucket := (int32(c.AnchorTimeMs) - int32(sampleTime)) / 100
+                  if sd.bucketAddrs[bucket] == nil {
+                      sd.bucketAddrs[bucket] = make(map[uint32]struct{})
+                  }
+                  sd.bucketAddrs[bucket][address] = struct{}{}
               }
           }
       }
 
-      var totalPairs int
-      for _, times := range sampleFingerprint {
-          totalPairs += len(times)
-      }
-      totalFingerprints := float64(totalPairs)
+      totalSampleAddresses := float64(len(sampleFingerprint))
 
       var result []RawMatch
-      for songID, times := range matches {
-          offsetCounts := make(map[int32]int)
-          for _, timePair := range times {
-              sampleTime := int32(timePair[0])
-              dbTime := int32(timePair[1])
-              offsetBucket := (dbTime - sampleTime) / 100
-              offsetCounts[offsetBucket]++
-          }
+      for songID, sd := range songMap {
+          totalUnique := len(sd.allAddrs)
 
-          var maxCount int
+          var maxBucketCount int
           var dominantBucket int32
-          for bucket, count := range offsetCounts {
-              if count > maxCount {
-                  maxCount = count
+          for bucket, addrs := range sd.bucketAddrs {
+              if len(addrs) > maxBucketCount {
+                  maxBucketCount = len(addrs)
                   dominantBucket = bucket
               }
           }
 
-	  result = append(result, RawMatch{
-	      SongID:      songID,
-	      Score:       float64(maxCount),
-	      Confidence:  float64(maxCount) / totalFingerprints,
-	      TimestampMs: dominantBucket * 100,
-	  })
-
+          result = append(result, RawMatch{
+              SongID:      songID,
+              Score:       float64(maxBucketCount) / float64(totalUnique),
+              Confidence:  float64(maxBucketCount) / totalSampleAddresses,
+              TimestampMs: dominantBucket * 100,
+          })
       }
 
       sort.Slice(result, func(i, j int) bool {
-          return result[i].Score > result[j].Score
+          return result[i].Confidence > result[j].Confidence
       })
 
       if topN > 0 && len(result) > topN {

@@ -140,6 +140,16 @@
 	      defer unavailableFile.Close()
 	  }
 
+	  blacklistPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + "_blacklist.txt"
+	  blacklistFile, err := os.OpenFile(blacklistPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	  if err != nil {
+	      fmt.Printf("Warning: could not create blacklist log: %v\n", err)
+	      blacklistFile = nil
+	  }
+	  if blacklistFile != nil {
+	      defer blacklistFile.Close()
+	  }
+
         mainDB, err := db.NewDBClient()
         if err != nil {
                 fmt.Printf("Warning: could not open main DB for skip check: %v\n", err)
@@ -188,6 +198,12 @@
 		      if err == nil && exists {
 			  fmt.Printf("[%d/%d] song_id=%-8s already in main DB, skipping\n", i+1, total, songIDStr)
 			  successCount++
+			  continue
+		      }
+		      blacklisted, err := mainDB.IsBlacklisted(songID)
+		      if err == nil && blacklisted {
+			  fmt.Printf("[%d/%d] song_id=%-8s ytID=%-15s blacklisted (too long), skipping\n", i+1, total, songIDStr, ytID)
+			  errorCount++
 			  continue
 		      }
 		  }
@@ -269,8 +285,11 @@
                         if durationSec, parseErr := strconv.ParseFloat(meta.Format.Duration, 64); parseErr == nil && durationSec > 600 {
                                 os.Remove(audioPath)
                                 fmt.Printf(" SKIPPED (duration %.0fs exceeds 10 min)\n", durationSec)
-                                if unavailableFile != nil {
-                                        fmt.Fprintf(unavailableFile, "%s\n", songIDStr)
+                                if mainDB != nil {
+                                        mainDB.AddToBlacklist(songID)
+                                }
+                                if blacklistFile != nil {
+                                        fmt.Fprintf(blacklistFile, "%s\n", songIDStr)
                                 }
                                 errorCount++
                                 continue

@@ -10,7 +10,7 @@ const (
 	maxFreqBits        = 9
 	maxDeltaBits       = 14
 	targetZoneSize     = 3
-	maxCouplesPerAddr  = 2
+	maxCouplesPerAddr  = 5
 )
 
 // Fingerprint generates fingerprints from a list of peaks and stores them in an array.
@@ -70,28 +70,27 @@ func FingerprintAudio(songFilePath string, songID uint32) (map[uint32][]models.C
 		return nil, fmt.Errorf("error reading WAV info: %v", err)
 	}
 
-	fingerprint := make(map[uint32][]models.Couple)
+	// Mix to mono: average L+R if stereo, use L directly if already mono.
+	// Recognition samples from the browser are always mono, so storing fingerprints
+	// from a mono mix ensures every DB address is reachable by a real recording.
+	samples := wavInfo.LeftChannelSamples
+	if wavInfo.Channels == 2 {
+		mixed := make([]float64, len(wavInfo.LeftChannelSamples))
+		for i := range mixed {
+			mixed[i] = (wavInfo.LeftChannelSamples[i] + wavInfo.RightChannelSamples[i]) / 2
+		}
+		samples = mixed
+	}
 
-	spectro, err := Spectrogram(wavInfo.LeftChannelSamples, wavInfo.SampleRate)
+	spectro, err := Spectrogram(samples, wavInfo.SampleRate)
 	if err != nil {
 		return nil, fmt.Errorf("error creating spectrogram: %v", err)
 	}
 
 	peaks := ExtractPeaks(spectro, wavInfo.Duration, wavInfo.SampleRate)
+	fingerprint := make(map[uint32][]models.Couple)
 	for addr, couples := range Fingerprint(peaks, songID) {
 		fingerprint[addr] = append(fingerprint[addr], couples...)
-	}
-
-	if wavInfo.Channels == 2 {
-		spectro, err = Spectrogram(wavInfo.RightChannelSamples, wavInfo.SampleRate)
-		if err != nil {
-			return nil, fmt.Errorf("error creating spectrogram for right channel: %v", err)
-		}
-
-		peaks = ExtractPeaks(spectro, wavInfo.Duration, wavInfo.SampleRate)
-		for addr, couples := range Fingerprint(peaks, songID) {
-			fingerprint[addr] = append(fingerprint[addr], couples...)
-		}
 	}
 
 	return fingerprint, nil
