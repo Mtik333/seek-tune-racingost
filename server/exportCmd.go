@@ -376,5 +376,9 @@
         fmt.Printf("\nExport complete: %d succeeded, %d failed\n", successCount, errorCount)
         if outputMode != modeSQLite {
                 fmt.Printf("Output written to: %s\n", outputPath)
+        } else {
+                if err := mainDB.RebuildCommonAddresses(); err != nil {
+                        fmt.Fprintf(os.Stderr, "Warning: failed to rebuild common_addresses: %v\n", err)
+                }
         }
   }

@@ -234,3 +234,7 @@ func (db *MongoClient) AddToBlacklist(songID uint32) error {
 func (db *MongoClient) IsBlacklisted(songID uint32) (bool, error) {
 	return false, fmt.Errorf("blacklist not supported by MongoDB")
 }
+
+func (db *MongoClient) RebuildCommonAddresses() error {
+	return fmt.Errorf("common_addresses not supported by MongoDB")
+}

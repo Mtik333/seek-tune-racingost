@@ -24,6 +24,7 @@ type DBClient interface {
 	FillBlacklistByDuration(thresholdMs int) (int, error)
 	AddToBlacklist(songID uint32) error
 	IsBlacklisted(songID uint32) (bool, error)
+	RebuildCommonAddresses() error
 }
 
 type Song struct {

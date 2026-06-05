@@ -11,7 +11,8 @@ import (
 )
 
 type SQLiteClient struct {
-	db *sql.DB
+	db              *sql.DB
+	commonAddresses map[uint32]struct{}
 }
 
 func NewSQLiteClient(dataSourceName string) (*SQLiteClient, error) {
@@ -46,7 +47,11 @@ func NewSQLiteClient(dataSourceName string) (*SQLiteClient, error) {
 		return nil, fmt.Errorf("error creating tables: %s", err)
 	}
 
-	return &SQLiteClient{db: db}, nil
+	client := &SQLiteClient{db: db}
+	if err := client.loadCommonAddresses(); err != nil {
+		return nil, fmt.Errorf("error loading common addresses: %s", err)
+	}
+	return client, nil
 }
 
 
@@ -77,6 +82,12 @@ func createTables(db *sql.DB) error {
     );
     `
 
+	createCommonAddressesTable := `
+    CREATE TABLE IF NOT EXISTS common_addresses (
+        address INTEGER PRIMARY KEY
+    );
+    `
+
 	_, err := db.Exec(createSongsTable)
 	if err != nil {
 		return fmt.Errorf("error creating songs table: %s", err)
@@ -90,6 +101,11 @@ func createTables(db *sql.DB) error {
 	_, err = db.Exec(createBlacklistTable)
 	if err != nil {
 		return fmt.Errorf("error creating blacklist table: %s", err)
+	}
+
+	_, err = db.Exec(createCommonAddressesTable)
+	if err != nil {
+		return fmt.Errorf("error creating common_addresses table: %s", err)
 	}
 
 	return nil
@@ -136,64 +152,118 @@ func (db *SQLiteClient) StoreFingerprints(fingerprints map[uint32][]models.Coupl
         return count > 0, nil
   }
 
-func (db *SQLiteClient) GetCouples(addresses []uint32) (map[uint32][]models.Couple, error) {
-	couples := make(map[uint32][]models.Couple)
+func (db *SQLiteClient) loadCommonAddresses() error {
+	rows, err := db.db.Query("SELECT address FROM common_addresses")
+	if err != nil {
+		return fmt.Errorf("error loading common_addresses: %s", err)
+	}
+	defer rows.Close()
+	m := make(map[uint32]struct{})
+	for rows.Next() {
+		var addr uint32
+		if err := rows.Scan(&addr); err != nil {
+			return fmt.Errorf("error scanning common address: %s", err)
+		}
+		m[addr] = struct{}{}
+	}
+	db.commonAddresses = m
+	return rows.Err()
+}
 
-	for _, address := range addresses {
-		rows, err := db.db.Query("SELECT anchorTimeMs, songID FROM fingerprints WHERE address = ?", address)
+func (db *SQLiteClient) RebuildCommonAddresses() error {
+	fmt.Println("Rebuilding common_addresses table...")
+	_, err := db.db.Exec(`
+		DELETE FROM common_addresses;
+		INSERT INTO common_addresses (address)
+		SELECT address FROM fingerprints
+		GROUP BY address
+		HAVING COUNT(*) > ?`, maxSongMatchesPerAddress*5)
+	if err != nil {
+		return fmt.Errorf("error rebuilding common_addresses: %s", err)
+	}
+	if err := db.loadCommonAddresses(); err != nil {
+		return err
+	}
+	fmt.Printf("common_addresses rebuilt: %d entries\n", len(db.commonAddresses))
+	return nil
+}
+
+// maxSongMatchesPerAddress: addresses matching more songs than this are discarded as noise.
+// They add no discriminative power and account for the vast majority of DB rows fetched.
+const maxSongMatchesPerAddress = 500
+const addressChunkSize = 900
+
+// filterDiscriminativeAddresses removes addresses that are in the in-memory common_addresses
+// set. If the set is empty (table not yet built), all addresses pass through.
+func (db *SQLiteClient) filterDiscriminativeAddresses(addresses []uint32) ([]uint32, error) {
+	if len(db.commonAddresses) == 0 {
+		return addresses, nil
+	}
+	kept := make([]uint32, 0, len(addresses))
+	for _, addr := range addresses {
+		if _, isCommon := db.commonAddresses[addr]; !isCommon {
+			kept = append(kept, addr)
+		}
+	}
+	return kept, nil
+}
+
+func (db *SQLiteClient) queryCouplesInChunks(addresses []uint32, filterSet map[uint32]bool) (map[uint32][]models.Couple, error) {
+	discriminative, err := db.filterDiscriminativeAddresses(addresses)
+	if err != nil {
+		return nil, err
+	}
+	couples := make(map[uint32][]models.Couple)
+	for i := 0; i < len(discriminative); i += addressChunkSize {
+		end := i + addressChunkSize
+		if end > len(discriminative) {
+			end = len(discriminative)
+		}
+		chunk := discriminative[i:end]
+
+		placeholders := make([]string, len(chunk))
+		args := make([]interface{}, len(chunk))
+		for j, addr := range chunk {
+			placeholders[j] = "?"
+			args[j] = addr
+		}
+		query := fmt.Sprintf("SELECT address, anchorTimeMs, songID FROM fingerprints WHERE address IN (%s)",
+			strings.Join(placeholders, ","))
+
+		rows, err := db.db.Query(query, args...)
 		if err != nil {
 			return nil, fmt.Errorf("error querying database: %s", err)
 		}
-
-		var docCouples []models.Couple
 		for rows.Next() {
+			var address uint32
 			var couple models.Couple
-			if err := rows.Scan(&couple.AnchorTimeMs, &couple.SongID); err != nil {
-				rows.Close() // close before returning error
+			if err := rows.Scan(&address, &couple.AnchorTimeMs, &couple.SongID); err != nil {
+				rows.Close()
 				return nil, fmt.Errorf("error scanning row: %s", err)
 			}
-			docCouples = append(docCouples, couple)
+			if len(filterSet) == 0 || filterSet[couple.SongID] {
+				couples[address] = append(couples[address], couple)
+			}
 		}
-
-		rows.Close() // close explicitly after reading
-
-		couples[address] = docCouples
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("error iterating rows: %s", err)
+		}
 	}
-
 	return couples, nil
 }
 
-  func (db *SQLiteClient) GetCouplesFiltered(addresses []uint32, songIDs []uint32) (map[uint32][]models.Couple, error) {
-      couples := make(map[uint32][]models.Couple)
+func (db *SQLiteClient) GetCouples(addresses []uint32) (map[uint32][]models.Couple, error) {
+	return db.queryCouplesInChunks(addresses, nil)
+}
 
-      filterSet := make(map[uint32]bool, len(songIDs))
-      for _, id := range songIDs {
-          filterSet[id] = true
-      }
-
-      for _, address := range addresses {
-      	rows, err := db.db.Query("SELECT anchorTimeMs, songID FROM fingerprints WHERE address = ?", address)
-          if err != nil {
-              return nil, fmt.Errorf("error querying database: %s", err)
-          }
-          
-          var docCouples []models.Couple
-          for rows.Next() {
-              var couple models.Couple
-              if err := rows.Scan(&couple.AnchorTimeMs, &couple.SongID); err != nil {
-                  rows.Close()
-                  return nil, fmt.Errorf("error scanning row: %s", err)
-              }
-              if len(filterSet) == 0 || filterSet[couple.SongID] {
-                  docCouples = append(docCouples, couple)
-              }   
-          }
-          rows.Close()
-          couples[address] = docCouples
-      }   
-  
-      return couples, nil
-  }   
+func (db *SQLiteClient) GetCouplesFiltered(addresses []uint32, songIDs []uint32) (map[uint32][]models.Couple, error) {
+	filterSet := make(map[uint32]bool, len(songIDs))
+	for _, id := range songIDs {
+		filterSet[id] = true
+	}
+	return db.queryCouplesInChunks(addresses, filterSet)
+}
 
 
 func (db *SQLiteClient) TotalSongs() (int, error) {

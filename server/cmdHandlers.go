@@ -447,7 +447,7 @@ func fingerprintSong(songID uint32, ytID string, browser string, force bool, rep
           fmt.Fprintf(os.Stderr, "Error fingerprinting: %v\n", err)
           os.Exit(1)
       }
-      
+
       sampleFP := make(map[uint32][]uint32, len(fingerprint))
       for address, couples := range fingerprint {
           for _, couple := range couples {
@@ -456,7 +456,8 @@ func fingerprintSong(songID uint32, ytID string, browser string, force bool, rep
       }
 
 	matches, err := shazam.FindRawMatches(sampleFP, 5, songIDs)
-      if err != nil { 
+
+      if err != nil {
           fmt.Fprintf(os.Stderr, "Error finding matches: %v\n", err)
           os.Exit(1)
       }
